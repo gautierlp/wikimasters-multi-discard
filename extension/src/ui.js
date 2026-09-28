@@ -123,3 +123,41 @@ export function deselect(state, id) {
   state.selected.delete(id);
   state.onChange(state.selected.size);
 }
+
+// Bound cards that show a checkbox and still show what they showed when bound.
+function selectableEntries(state) {
+  const out = [];
+  for (const [cardEl, entry] of state.bound) {
+    const box = cardEl.querySelector('.wmd-check');
+    if (box && cardEl.isConnected && stillMatches(cardEl, entry)) out.push({ cardEl, box, id: entry.row.id });
+  }
+  return out;
+}
+
+export function selectableCount(state) {
+  return selectableEntries(state).length;
+}
+
+export function allSelected(state) {
+  const entries = selectableEntries(state);
+  return entries.length > 0 && entries.every((e) => state.selected.has(e.id));
+}
+
+// Ticks every selectable card on the current grid page.
+export function selectAll(state) {
+  for (const { cardEl, box, id } of selectableEntries(state)) {
+    box.checked = true;
+    state.selected.set(id, cardEl);
+  }
+  state.onChange(state.selected.size);
+}
+
+export function clearAll(state) {
+  if (state.selected.size === 0) return;
+  for (const cardEl of state.selected.values()) {
+    const box = cardEl.querySelector('.wmd-check');
+    if (box) box.checked = false;
+  }
+  state.selected.clear();
+  state.onChange(0);
+}

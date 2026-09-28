@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach } from 'vitest';
-import { findGrid, createState, scanGrid, selectedForDiscard, markDiscarded, deselect } from '../extension/src/ui.js';
+import { findGrid, createState, scanGrid, selectedForDiscard, markDiscarded, deselect, selectableCount, allSelected, selectAll, clearAll } from '../extension/src/ui.js';
 import { buildCardMap } from '../extension/src/api.js';
 import { row, cardEl, framedCardEl } from './helpers.js';
 
@@ -211,5 +211,66 @@ describe('scanGrid on live card markup', () => {
     el.querySelector('input.wmd-check').click();
     el.querySelectorAll('img')[1].setAttribute('src', 'https://img.test/2.png');
     expect(selectedForDiscard(state)).toEqual([]);
+  });
+});
+
+describe('selectAll / clearAll', () => {
+  // Two free cards, one starred card, one card with no matching row.
+  function page() {
+    const { state, changes } = setup([row(1), row(2), row(3, { starred: true })]);
+    const els = [
+      cardEl('https://img.test/1.png', 'Title 1'),
+      cardEl('https://img.test/2.png', 'Title 2'),
+      cardEl('https://img.test/3.png', 'Title 3'),
+      cardEl('https://img.test/9.png', 'Nope'),
+    ];
+    scanGrid(makeGrid(els), state);
+    return { state, changes, els };
+  }
+  const box = (el) => el.querySelector('input.wmd-check');
+
+  it('ticks every free card and skips locked and unbound cards', () => {
+    const { state, changes, els } = page();
+    selectAll(state);
+    expect([...state.selected.keys()].sort()).toEqual(['uc-1', 'uc-2']);
+    expect(box(els[0]).checked).toBe(true);
+    expect(box(els[1]).checked).toBe(true);
+    expect(changes).toEqual([2]);
+    expect(selectedForDiscard(state).sort()).toEqual(['uc-1', 'uc-2']);
+  });
+
+  it('skips a card that shows something else since it was bound', () => {
+    const { state, els } = page();
+    els[1].querySelector('h3').textContent = 'Changed';
+    selectAll(state);
+    expect([...state.selected.keys()]).toEqual(['uc-1']);
+  });
+
+  it('reports whether every selectable card is selected', () => {
+    const { state, els } = page();
+    expect(selectableCount(state)).toBe(2);
+    expect(allSelected(state)).toBe(false);
+    box(els[0]).click();
+    expect(allSelected(state)).toBe(false);
+    selectAll(state);
+    expect(allSelected(state)).toBe(true);
+  });
+
+  it('is never all selected when no card is selectable', () => {
+    const { state } = setup([]);
+    expect(selectableCount(state)).toBe(0);
+    expect(allSelected(state)).toBe(false);
+  });
+
+  it('clearAll unticks every box and reports 0 once', () => {
+    const { state, changes, els } = page();
+    selectAll(state);
+    clearAll(state);
+    expect(state.selected.size).toBe(0);
+    expect(box(els[0]).checked).toBe(false);
+    expect(box(els[1]).checked).toBe(false);
+    expect(changes).toEqual([2, 0]);
+    clearAll(state);
+    expect(changes).toEqual([2, 0]);
   });
 });
