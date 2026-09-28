@@ -1,7 +1,7 @@
 # WikiMasters multi-discard: select all on the current page
 
 Date: 2026-09-28
-Status: approved in chat (design), pending implementation plan
+Status: implemented (branch select-all)
 Builds on: `2026-09-28-per-page-loading-design.md` (merged)
 
 ## Problem

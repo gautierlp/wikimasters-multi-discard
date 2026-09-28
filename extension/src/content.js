@@ -34,16 +34,22 @@ function ensureBar() {
   return bar;
 }
 
+// Only write textContent when it changed, so render() does not trigger a
+// childList mutation (and another observer tick) on every call.
+function setText(el, text) {
+  if (el.textContent !== text) el.textContent = text;
+}
+
 function render() {
   const b = ensureBar();
   const count = state ? state.selected.size : 0;
   const selectable = state ? selectableCount(state) : 0;
   const msg = b.querySelector('.wmd-msg').textContent;
-  b.querySelector('.wmd-count').textContent = count ? `${count} selected` : '';
+  setText(b.querySelector('.wmd-count'), count ? `${count} selected` : '');
   const all = b.querySelector('.wmd-all');
   all.hidden = selectable === 0;
   all.disabled = busy;
-  all.textContent = selectable > 0 && allSelected(state) ? 'Clear all' : 'Select all';
+  setText(all, selectable > 0 && allSelected(state) ? 'Clear all' : 'Select all');
   const button = b.querySelector('.wmd-discard');
   button.hidden = count === 0;
   button.disabled = busy;
@@ -188,7 +194,12 @@ async function startFallback() {
 }
 
 function tick() {
-  if (!onCollectionPage()) return;
+  if (!onCollectionPage()) {
+    // Off the collection page the grid is disconnected, so selectableCount
+    // is 0. Still render so the bar hides instead of staying stuck visible.
+    if (bar) render();
+    return;
+  }
   const grid = findGrid();
   if (!grid) return;
   if (state) {
@@ -206,7 +217,10 @@ new PerformanceObserver((list) => {
 
 // Rescan when the grid appears (client-side navigation) or changes page.
 let timer = null;
-new MutationObserver(() => {
+new MutationObserver((records) => {
+  // Ignore mutation batches that only touch our own bar (e.g. its text
+  // updates): otherwise render() would keep re-triggering this observer.
+  if (bar && records.every((r) => bar.contains(r.target))) return;
   clearTimeout(timer);
   timer = setTimeout(tick, 200);
 }).observe(document.body, { childList: true, subtree: true });
