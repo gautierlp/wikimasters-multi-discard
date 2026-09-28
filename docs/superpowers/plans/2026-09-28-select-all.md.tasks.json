@@ -1,0 +1,21 @@
+{
+  "planPath": "docs/superpowers/plans/2026-09-28-select-all.md",
+  "tasks": [
+    {
+      "id": 0,
+      "subject": "Task 1: Selection helpers in ui.js",
+      "status": "pending",
+      "description": "**Goal:** `selectableCount`, `allSelected`, `selectAll`, and `clearAll` exported from `extension/src/ui.js`, fully unit-tested.\n\n**Files:**\n- Modify: `extension/src/ui.js` (append four exports and one internal helper)\n- Test: `tests/ui.test.js` (extend the import, add one describe block)\n\n**Acceptance Criteria:**\n- [ ] `selectAll` ticks and selects every free card; locked and unbound cards stay out; `onChange` is called once with the new size.\n- [ ] `selectAll` skips a card whose image or title changed since binding.\n- [ ] `selectableCount` counts free, still-matching cards; `allSelected` is false with 0 selectable, false with a partial selection, true after `selectAll`.\n- [ ] `clearAll` unticks every box, empties the selection, calls `onChange(0)` once, and does nothing on an empty selection.\n- [ ] `selectedForDiscard` returns every id after `selectAll`.\n\n**Verify:** `npm test` \u2192 82 tests pass\n\n```json:metadata\n{\"files\": [\"extension/src/ui.js\", \"tests/ui.test.js\"], \"verifyCommand\": \"npm test\", \"acceptanceCriteria\": [\"selectAll ticks free cards only, onChange once\", \"selectAll skips changed cards\", \"selectableCount/allSelected correct\", \"clearAll unticks, onChange(0) once, no-op when empty\", \"selectedForDiscard returns all after selectAll\"], \"modelTier\": \"mechanical\"}\n```"
+    },
+    {
+      "id": 1,
+      "subject": "Task 2: Select all button in the bar",
+      "status": "pending",
+      "description": "**Goal:** A `.wmd-all` button in `#wmd-bar` that calls `selectAll` or `clearAll`, with its label, visibility, and busy state driven by `render()`, plus the README usage line.\n\n**Files:**\n- Modify: `extension/src/content.js` (import, `ensureBar`, `render`, new `onSelectAllClick`, `applyStore`, `tick`)\n- Modify: `extension/src/styles.css` (add `.wmd-all` rules)\n- Modify: `README.md` (Usage step 3)\n\n**Acceptance Criteria:**\n- [ ] The bar contains `<button type=\"button\" class=\"wmd-all\">` before the Discard button.\n- [ ] `render()` hides the button when `selectableCount(state) === 0`, disables it when busy, and labels it `Clear all` when `allSelected(state)`, else `Select all`.\n- [ ] The bar stays visible when `selectableCount(state) > 0`, even with 0 selected.\n- [ ] `render()` runs after the `scanGrid` call in `applyStore` and in `tick`.\n- [ ] `npm test` passes (82) and `npm run build` exits 0.\n\n**Verify:** `npm test && npm run build` \u2192 82 tests pass, build writes `extension/dist/content.js`\n\n```json:metadata\n{\"files\": [\"extension/src/content.js\", \"extension/src/styles.css\", \"README.md\"], \"verifyCommand\": \"npm test && npm run build\", \"acceptanceCriteria\": [\"wmd-all button in bar before Discard\", \"render drives hidden/disabled/label\", \"bar visible when selectable > 0\", \"render after scanGrid in applyStore and tick\", \"82 tests pass and build exits 0\"], \"modelTier\": \"mechanical\"}\n```",
+      "blockedBy": [
+        0
+      ]
+    }
+  ],
+  "lastUpdated": "2026-09-28T15:33:07.012972"
+}
