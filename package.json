@@ -1,0 +1,15 @@
+{
+  "name": "wikimasters-multi-discard",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "esbuild extension/src/content.js --bundle --format=iife --target=chrome120 --outfile=extension/dist/content.js",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "jsdom": "^27.0.1",
+    "vitest": "^3.2.7"
+  }
+}
