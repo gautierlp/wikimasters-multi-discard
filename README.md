@@ -154,8 +154,10 @@ After each `npm run build`, click the reload icon on the extension's card in
 1. Open your collection at `https://www.wiki-masters.com/collection`.
 2. Wait a few seconds for the checkboxes to appear in the top-left corner of each card.
    Starred cards and cards in a pending trade show a 🔒 instead.
-3. Tick the cards you want to discard. A bar at the bottom of the page shows how
-   many are selected.
+3. Tick the cards you want to discard, or click **Select all** in the bar at the
+   bottom of the page to tick every card on the current page (locked cards stay
+   out). The bar shows how many are selected. Once all are ticked, the button
+   reads **Clear all**.
 4. Click **Discard**, then confirm in the dialog. **Cancel** changes nothing.
 5. Watch the bar count up (`Discarded 3 of 12...`). Each discarded card disappears
    from the grid.

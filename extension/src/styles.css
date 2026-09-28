@@ -93,3 +93,13 @@
   background: #e5e7eb;
   color: #111827;
 }
+
+.wmd-all {
+  background: #374151;
+  color: #f9fafb;
+}
+
+.wmd-all:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}

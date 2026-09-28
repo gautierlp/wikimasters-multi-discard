@@ -1,7 +1,7 @@
 import { fetchAllCollection, fetchCollectionPage, buildCardMap, discardCard } from './api.js';
 import { createPageStore, isCollectionPageUrl } from './pages.js';
 import { runDiscardQueue, DELAY_MS } from './queue.js';
-import { findGrid, createState, scanGrid, selectedForDiscard, markDiscarded, deselect } from './ui.js';
+import { findGrid, createState, scanGrid, selectedForDiscard, markDiscarded, deselect, selectableCount, allSelected, selectAll, clearAll } from './ui.js';
 import { filterStillDiscardable } from './select.js';
 
 // Only act on the owner's own collection page (confirmed live: /collection).
@@ -27,7 +27,8 @@ function ensureBar() {
   if (bar) return bar;
   bar = document.createElement('div');
   bar.id = 'wmd-bar';
-  bar.innerHTML = '<span class="wmd-msg"></span><span class="wmd-count"></span><button type="button" class="wmd-discard">Discard</button>';
+  bar.innerHTML = '<span class="wmd-msg"></span><span class="wmd-count"></span><button type="button" class="wmd-all">Select all</button><button type="button" class="wmd-discard">Discard</button>';
+  bar.querySelector('.wmd-all').addEventListener('click', onSelectAllClick);
   bar.querySelector('.wmd-discard').addEventListener('click', onDiscardClick);
   document.body.append(bar);
   return bar;
@@ -36,13 +37,18 @@ function ensureBar() {
 function render() {
   const b = ensureBar();
   const count = state ? state.selected.size : 0;
+  const selectable = state ? selectableCount(state) : 0;
   const msg = b.querySelector('.wmd-msg').textContent;
   b.querySelector('.wmd-count').textContent = count ? `${count} selected` : '';
+  const all = b.querySelector('.wmd-all');
+  all.hidden = selectable === 0;
+  all.disabled = busy;
+  all.textContent = selectable > 0 && allSelected(state) ? 'Clear all' : 'Select all';
   const button = b.querySelector('.wmd-discard');
   button.hidden = count === 0;
   button.disabled = busy;
   for (const box of document.querySelectorAll('input.wmd-check')) box.disabled = busy;
-  b.hidden = count === 0 && !msg;
+  b.hidden = count === 0 && selectable === 0 && !msg;
 }
 
 function showMessage(text, sticky = false) {
@@ -50,6 +56,12 @@ function showMessage(text, sticky = false) {
   clearTimeout(messageTimer);
   if (text && !sticky) messageTimer = setTimeout(() => showMessage(''), MESSAGE_MS);
   render();
+}
+
+function onSelectAllClick() {
+  if (!state || busy) return;
+  if (allSelected(state)) clearAll(state);
+  else selectAll(state);
 }
 
 function confirmDiscard(count) {
@@ -147,6 +159,7 @@ function applyStore() {
   }
   const grid = onCollectionPage() ? findGrid() : null;
   if (grid) scanGrid(grid, state);
+  render();
 }
 
 function onResource(url) {
@@ -178,8 +191,10 @@ function tick() {
   if (!onCollectionPage()) return;
   const grid = findGrid();
   if (!grid) return;
-  if (state) scanGrid(grid, state);
-  else if (!sawSiteRequest && !fallbackTimer && !failed) fallbackTimer = setTimeout(startFallback, FALLBACK_MS);
+  if (state) {
+    scanGrid(grid, state);
+    render();
+  } else if (!sawSiteRequest && !fallbackTimer && !failed) fallbackTimer = setTimeout(startFallback, FALLBACK_MS);
 }
 
 // The site loads each grid page from /api/my-collection. Resource timing
