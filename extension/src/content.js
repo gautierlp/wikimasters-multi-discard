@@ -119,6 +119,9 @@ async function discardAfterRecheck(ids) {
       markDiscarded(state, id);
       showMessage(`Discarded ${done} of ${total}...`, true);
     },
+    onRetry: ({ attempt, waitMs, error }) => {
+      showMessage(`Server error (${error}). Try ${attempt + 1} in ${waitMs / 1000} s...`, true);
+    },
   });
   const suffix = skipped.length > 0 ? ` Skipped ${skipped.length} protected or missing card(s).` : '';
   if (result.failedAt) {

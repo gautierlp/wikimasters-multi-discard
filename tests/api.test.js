@@ -83,8 +83,24 @@ describe('discardCard', () => {
     expect(calls).toEqual([{ url: '/api/user-cards/uc-9/discard', opts: { method: 'POST', credentials: 'include' } }]);
   });
 
-  it('returns false on a non-ok response', async () => {
-    expect(await discardCard('uc-9', async () => ({ ok: false, status: 403 }))).toBe(false);
+  it('throws the status and the server message on a non-ok response', async () => {
+    const res = { ok: false, status: 400, text: async () => JSON.stringify({ error: 'Card is locked' }) };
+    await expect(discardCard('uc-9', async () => res)).rejects.toThrow('HTTP 400: Card is locked');
+  });
+
+  it('puts the HTTP status on the thrown error', async () => {
+    const res = { ok: false, status: 500, text: async () => '' };
+    await expect(discardCard('uc-9', async () => res)).rejects.toMatchObject({ status: 500 });
+  });
+
+  it('throws the status and a short plain-text body', async () => {
+    const res = { ok: false, status: 429, text: async () => 'x'.repeat(500) };
+    await expect(discardCard('uc-9', async () => res)).rejects.toThrow(`HTTP 429: ${'x'.repeat(150)}`);
+  });
+
+  it('throws only the status when the body is empty or unreadable', async () => {
+    await expect(discardCard('uc-9', async () => ({ ok: false, status: 403, text: async () => '' }))).rejects.toThrow(/^HTTP 403$/);
+    await expect(discardCard('uc-9', async () => ({ ok: false, status: 500, text: async () => { throw new Error('x'); } }))).rejects.toThrow(/^HTTP 500$/);
   });
 });
 

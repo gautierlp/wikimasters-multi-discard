@@ -40,9 +40,32 @@ export function buildCardMap(rows) {
   return { byImage, byTitle, ordered: rows };
 }
 
+// Returns true on success. On a refusal, throws the HTTP status and the
+// server's own message, so the user sees why the discard stopped.
 export async function discardCard(userCardId, fetchFn = fetch) {
   const res = await fetchFn(DISCARD_URL(userCardId), { method: 'POST', credentials: 'include' });
-  return res.ok;
+  if (res.ok) return true;
+  const reason = await readErrorReason(res);
+  const err = new Error(reason ? `HTTP ${res.status}: ${reason}` : `HTTP ${res.status}`);
+  err.status = res.status;
+  throw err;
+}
+
+async function readErrorReason(res) {
+  let body;
+  try {
+    body = (await res.text()).trim();
+  } catch {
+    return '';
+  }
+  try {
+    const data = JSON.parse(body);
+    const msg = data?.error ?? data?.message;
+    if (typeof msg === 'string') body = msg;
+  } catch {
+    // Not JSON: keep the plain text.
+  }
+  return body.slice(0, 150);
 }
 
 // Loads one page of the collection by its exact URL (the URL the site itself

@@ -78,8 +78,9 @@ A discard cannot be undone, so when in doubt the extension does nothing:
   starred), neither gets a checkbox.
 * **One confirmation, then a checked queue.** Right before it starts, the
   extension loads the page again and drops any selected card that was starred or
-  traded in the meantime. It then discards one card every 400 ms and stops at the
-  first error, telling you which card failed and why.
+  traded in the meantime. It then discards one card every 400 ms. When the server has a
+  temporary error, it tries that card again (after 2, 5, then 10 s). If the card
+  still fails, it stops and tells you which card failed and why.
 
 It uses your existing login session. It needs no Chrome permissions beyond
 access to wiki-masters.com.
@@ -163,7 +164,7 @@ When it finishes, the bar reports the result:
 
 ```
 Discarded 12 cards.
-Discarded 7. Stopped at card <id>: the server refused the discard. Reload the page before you try again.
+Discarded 7. Stopped at card <id>: HTTP 429: Too many requests. Reload the page before you try again.
 Nothing to discard: 2 card(s) are now starred, in a trade, or gone.
 ```
 
@@ -202,7 +203,7 @@ The code lives in `extension/src/`:
 | `pages.js` | Keeps loaded pages, one per URL, and re-checks them before a discard |
 | `select.js` | Protection rules and card-to-row matching |
 | `ui.js` | Finds the grid, adds checkboxes and locks, tracks the selection |
-| `queue.js` | Discards one card at a time and stops at the first failure |
+| `queue.js` | Discards one card at a time, retries server errors, stops at the first card that still fails |
 | `content.js` | Wires it all to the live page: the bar, the dialog, the observers |
 
 The extension only ever calls those two same-origin endpoints, with your existing
