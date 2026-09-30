@@ -2,17 +2,24 @@ import base64
 import json
 import stat
 
+import httpx
 import pytest
 
 from wikimasters import auth
 from wikimasters.auth import (
+    ANON_KEY,
     COOKIE_NAME,
     LoginRequired,
+    REFRESH_URL,
     SessionStore,
     build_cookie_header,
+    ensure_fresh,
     parse_cookie_header,
+    refresh,
 )
 from wikimasters.models import Session
+
+from .conftest import make_session_dict
 
 
 def encode_cookie_value(data: dict) -> str:
@@ -95,3 +102,64 @@ def test_store_corrupt_file(tmp_path):
 def test_store_default_path_uses_env(monkeypatch, tmp_path):
     monkeypatch.setenv("WM_CONFIG_DIR", str(tmp_path))
     assert SessionStore().path == tmp_path / "session.json"
+
+
+def refresh_transport(status: int = 200, calls: list | None = None) -> httpx.MockTransport:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if calls is not None:
+            calls.append(request)
+        if status != 200:
+            return httpx.Response(status, json={"error_code": "refresh_token_not_found"})
+        body = make_session_dict()
+        body["access_token"] = "access-2"
+        body["refresh_token"] = "refresh-2"
+        return httpx.Response(200, json=body)
+
+    return httpx.MockTransport(handler)
+
+
+def test_anon_key_is_the_anon_role():
+    payload = ANON_KEY.split(".")[1]
+    decoded = json.loads(base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)))
+    assert decoded["role"] == "anon"
+    assert decoded["ref"] == auth.PROJECT_REF
+
+
+def test_refresh_posts_token_and_returns_new_session(session_dict):
+    calls: list[httpx.Request] = []
+    http = httpx.Client(transport=refresh_transport(calls=calls))
+    new = refresh(Session.model_validate(session_dict), http)
+    assert new.access_token == "access-2"
+    req = calls[0]
+    assert str(req.url) == REFRESH_URL
+    assert req.headers["apikey"] == ANON_KEY
+    assert json.loads(req.content) == {"refresh_token": "refresh-1"}
+
+
+def test_refresh_refused_raises_login_required(session_dict):
+    http = httpx.Client(transport=refresh_transport(status=400))
+    with pytest.raises(LoginRequired, match="Session expired"):
+        refresh(Session.model_validate(session_dict), http)
+
+
+def test_ensure_fresh_refreshes_near_expiry(tmp_path):
+    store = SessionStore(tmp_path / "session.json")
+    store.save(Session.model_validate(make_session_dict(expires_in_s=30)))
+    http = httpx.Client(transport=refresh_transport())
+    session = ensure_fresh(store, http)
+    assert session.access_token == "access-2"
+    assert store.load().refresh_token == "refresh-2"
+
+
+def test_ensure_fresh_keeps_a_valid_session(tmp_path):
+    store = SessionStore(tmp_path / "session.json")
+    store.save(Session.model_validate(make_session_dict(expires_in_s=3600)))
+    calls: list[httpx.Request] = []
+    http = httpx.Client(transport=refresh_transport(calls=calls))
+    assert ensure_fresh(store, http).access_token == "access-1"
+    assert calls == []
+
+
+def test_ensure_fresh_without_file(tmp_path):
+    with pytest.raises(LoginRequired):
+        ensure_fresh(SessionStore(tmp_path / "none.json"), httpx.Client(transport=refresh_transport()))

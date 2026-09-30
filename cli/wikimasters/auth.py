@@ -11,7 +11,10 @@ import base64
 import binascii
 import os
 import re
+import time
 from pathlib import Path
+
+import httpx
 
 from .models import Session
 
@@ -22,6 +25,8 @@ ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI
 COOKIE_NAME = f"sb-{PROJECT_REF}-auth-token"
 CHUNK_SIZE = 3180
 PREFIX = "base64-"
+REFRESH_URL = f"https://{PROJECT_REF}.supabase.co/auth/v1/token?grant_type=refresh_token"
+REFRESH_MARGIN_S = 60
 
 _CHUNK_RE = re.compile(re.escape(COOKIE_NAME) + r"(?:\.(\d+))?=([A-Za-z0-9_\-]+)")
 
@@ -86,3 +91,25 @@ class SessionStore:
         fd = os.open(self.path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(fd, "w") as f:
             f.write(session.model_dump_json(by_alias=True))
+
+
+def refresh(session: Session, http: httpx.Client) -> Session:
+    """Exchange the refresh token for a new session. The old refresh token dies."""
+    response = http.post(
+        REFRESH_URL,
+        headers={"apikey": ANON_KEY},
+        json={"refresh_token": session.refresh_token},
+    )
+    if response.status_code != 200:
+        raise LoginRequired("Session expired. Run `wm login` again.")
+    return Session.model_validate(response.json())
+
+
+def ensure_fresh(store: SessionStore, http: httpx.Client, now: float | None = None) -> Session:
+    """Load the session; refresh and save it when the access token is about to expire."""
+    session = store.load()
+    current = time.time() if now is None else now
+    if session.expires_at - current < REFRESH_MARGIN_S:
+        session = refresh(session, http)
+        store.save(session)
+    return session
