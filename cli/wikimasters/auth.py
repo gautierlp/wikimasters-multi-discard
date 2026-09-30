@@ -15,6 +15,7 @@ import time
 from pathlib import Path
 
 import httpx
+from pydantic import ValidationError
 
 from .models import Session
 
@@ -33,6 +34,10 @@ _CHUNK_RE = re.compile(re.escape(COOKIE_NAME) + r"(?:\.(\d+))?=([A-Za-z0-9_\-]+)
 
 class LoginRequired(Exception):
     """The CLI has no usable session. The user must run `wm login`."""
+
+
+class RefreshFailed(Exception):
+    """The token refresh call failed; the session is still valid but refresh needs retry."""
 
 
 def parse_cookie_header(text: str) -> Session:
@@ -101,8 +106,13 @@ def refresh(session: Session, http: httpx.Client) -> Session:
         json={"refresh_token": session.refresh_token},
     )
     if response.status_code != 200:
-        raise LoginRequired("Session expired. Run `wm login` again.")
-    return Session.model_validate(response.json())
+        if 400 <= response.status_code < 500:
+            raise LoginRequired("Session expired. Run `wm login` again.")
+        raise RefreshFailed(f"Could not refresh the session (HTTP {response.status_code}). Try again later.")
+    try:
+        return Session.model_validate(response.json())
+    except ValueError:
+        raise RefreshFailed("Could not refresh the session: unexpected answer from the auth service.")
 
 
 def ensure_fresh(store: SessionStore, http: httpx.Client, now: float | None = None) -> Session:

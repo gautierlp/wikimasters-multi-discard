@@ -11,6 +11,7 @@ from wikimasters.auth import (
     COOKIE_NAME,
     LoginRequired,
     REFRESH_URL,
+    RefreshFailed,
     SessionStore,
     build_cookie_header,
     ensure_fresh,
@@ -163,3 +164,43 @@ def test_ensure_fresh_keeps_a_valid_session(tmp_path):
 def test_ensure_fresh_without_file(tmp_path):
     with pytest.raises(LoginRequired):
         ensure_fresh(SessionStore(tmp_path / "none.json"), httpx.Client(transport=refresh_transport()))
+
+
+def test_refresh_server_error_raises_refresh_failed():
+    http = httpx.Client(transport=refresh_transport(status=502))
+    session = Session.model_validate(make_session_dict())
+    with pytest.raises(RefreshFailed, match="HTTP 502"):
+        refresh(session, http)
+
+
+def test_refresh_invalid_response_body_raises_refresh_failed(session_dict):
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"nope": 1})
+
+    http = httpx.Client(transport=httpx.MockTransport(handler))
+    with pytest.raises(RefreshFailed, match="unexpected answer from the auth service"):
+        refresh(Session.model_validate(session_dict), http)
+
+
+def test_ensure_fresh_at_boundary_60_does_not_refresh(tmp_path):
+    now = 1000.0
+    session_dict = make_session_dict()
+    session_dict["expires_at"] = int(now + 60)
+    store = SessionStore(tmp_path / "session.json")
+    store.save(Session.model_validate(session_dict))
+    calls: list[httpx.Request] = []
+    http = httpx.Client(transport=refresh_transport(calls=calls))
+    session = ensure_fresh(store, http, now=now)
+    assert session.access_token == "access-1"
+    assert calls == []
+
+
+def test_ensure_fresh_at_boundary_59_does_refresh(tmp_path):
+    now = 1000.0
+    session_dict = make_session_dict()
+    session_dict["expires_at"] = int(now + 59)
+    store = SessionStore(tmp_path / "session.json")
+    store.save(Session.model_validate(session_dict))
+    http = httpx.Client(transport=refresh_transport())
+    session = ensure_fresh(store, http, now=now)
+    assert session.access_token == "access-2"
