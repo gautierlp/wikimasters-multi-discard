@@ -3,7 +3,7 @@ import httpx
 import pytest
 
 from wikimasters.auth import COOKIE_NAME
-from wikimasters.client import PAGE_SIZE, ApiRefused, Client
+from wikimasters.client import PAGE_SIZE, RETRIES, RETRY_WAIT_S, ApiRefused, Client
 from wikimasters.models import Session
 
 from .conftest import make_session_dict
@@ -38,14 +38,14 @@ def session() -> Session:
     return Session.model_validate(make_session_dict())
 
 
-def client_with(handler, session: Session) -> tuple[Client, list[httpx.Request]]:
+def client_with(handler, session: Session, sleep=lambda s: None) -> tuple[Client, list[httpx.Request]]:
     calls: list[httpx.Request] = []
 
     def wrapped(request: httpx.Request) -> httpx.Response:
         calls.append(request)
         return handler(request)
 
-    return Client(session, transport=httpx.MockTransport(wrapped)), calls
+    return Client(session, transport=httpx.MockTransport(wrapped), sleep=sleep), calls
 
 
 def test_collection_page_sends_cookie_and_params(session, page_json):
@@ -113,3 +113,60 @@ def test_server_error_raises_httpx_error(session):
     client, _ = client_with(lambda r: httpx.Response(502, text="bad gateway"), session)
     with pytest.raises(httpx.HTTPStatusError):
         client.collection_page(0)
+
+
+def test_collection_page_retries_server_errors_then_succeeds(session, page_json):
+    answers = iter([500, 500, 200])
+    sleeps: list[float] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        status = next(answers)
+        return httpx.Response(status, json=page_json) if status == 200 else httpx.Response(status)
+
+    client, calls = client_with(handler, session, sleep=sleeps.append)
+    page = client.collection_page(0)
+    assert len(page.collection) == 3
+    assert len(calls) == 3
+    assert sleeps == [1.0, 2.0]
+
+
+def test_collection_page_gives_up_after_retries(session):
+    sleeps: list[float] = []
+    client, calls = client_with(lambda r: httpx.Response(500), session, sleep=sleeps.append)
+    with pytest.raises(httpx.HTTPStatusError):
+        client.collection_page(0)
+    assert len(calls) == RETRIES == 3
+    assert sleeps == [RETRY_WAIT_S, RETRY_WAIT_S * 2]
+
+
+def test_collection_page_retries_transport_errors(session, page_json):
+    attempts = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        attempts.append(1)
+        if len(attempts) == 1:
+            raise httpx.ConnectError("reset", request=request)
+        return httpx.Response(200, json=page_json)
+
+    sleeps: list[float] = []
+    client, calls = client_with(handler, session, sleep=sleeps.append)
+    assert len(client.collection_page(0).collection) == 3
+    assert sleeps == [1.0]
+
+
+def test_collection_page_does_not_retry_4xx(session):
+    sleeps: list[float] = []
+    client, calls = client_with(lambda r: httpx.Response(409, json={"error": "non"}), session, sleep=sleeps.append)
+    with pytest.raises(ApiRefused):
+        client.collection_page(0)
+    assert len(calls) == 1
+    assert sleeps == []
+
+
+def test_discard_is_not_retried_on_server_error(session):
+    sleeps: list[float] = []
+    client, calls = client_with(lambda r: httpx.Response(502), session, sleep=sleeps.append)
+    with pytest.raises(httpx.HTTPStatusError):
+        client.discard("uc-1")
+    assert len(calls) == 1
+    assert sleeps == []

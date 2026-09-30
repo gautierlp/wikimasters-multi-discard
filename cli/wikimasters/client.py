@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import time
+from collections.abc import Callable
+
 import httpx
 
 from .auth import build_cookie_header
@@ -14,6 +17,8 @@ USER_AGENT = (
 )
 PAGE_SIZE = 50
 MAX_PAGES = 200
+RETRIES = 3  # total attempts for a page load
+RETRY_WAIT_S = 1.0  # wait after attempt n is RETRY_WAIT_S * n
 
 
 class ApiRefused(Exception):
@@ -26,7 +31,13 @@ class ApiRefused(Exception):
 
 
 class Client:
-    def __init__(self, session: Session, transport: httpx.BaseTransport | None = None) -> None:
+    def __init__(
+        self,
+        session: Session,
+        transport: httpx.BaseTransport | None = None,
+        sleep: Callable[[float], None] = time.sleep,
+    ) -> None:
+        self._sleep = sleep
         self._http = httpx.Client(
             base_url=BASE_URL,
             transport=transport,
@@ -42,11 +53,18 @@ class Client:
         self._http.close()
 
     def collection_page(self, page: int, stats: bool = False) -> CollectionPage:
-        response = self._http.get(
-            "/api/my-collection",
-            params={"sort": "rarity", "page": page, "stats": int(stats)},
-        )
-        _raise_for(response)
+        params = {"sort": "rarity", "page": page, "stats": int(stats)}
+        for attempt in range(1, RETRIES + 1):
+            try:
+                response = self._http.get("/api/my-collection", params=params)
+            except httpx.TransportError:
+                if attempt == RETRIES:
+                    raise
+            else:
+                if response.status_code < 500 or attempt == RETRIES:
+                    _raise_for(response)
+                    break
+            self._sleep(RETRY_WAIT_S * attempt)
         return CollectionPage.model_validate(response.json())
 
     def all_collection(self) -> CollectionPage:
