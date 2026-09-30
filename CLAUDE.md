@@ -8,7 +8,8 @@ This repo will be published as open source.
 - Test fixtures use invented data (`uc-1`, `https://img.test/1.png`), never
   data captured from a live account.
 
-Commands: `npm test` (vitest), `npm run build` (esbuild to `extension/dist/`).
+Commands: `npm test` (vitest), `npm run build` (esbuild to `extension/dist/`),
+`cd cli && uv run pytest -q` (Python CLI tests).
 
 ## Publishing
 
