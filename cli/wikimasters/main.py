@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
-from typing import Callable, TypeVar
+from typing import Callable, NoReturn, TypeVar
 
 import httpx
 import typer
@@ -24,7 +24,7 @@ def _root() -> None:
     """WikiMasters from the terminal."""
 
 
-def _fail(message: str, code: int = 1) -> None:
+def _fail(message: str, code: int = 1) -> NoReturn:
     typer.echo(message, err=True)
     raise typer.Exit(code)
 
@@ -56,11 +56,18 @@ def _call(fn: Callable[[], T]) -> T:
         _fail(_api_message(err))
     except httpx.HTTPError as err:
         _fail(f"Network error: {err}")
+    except (ValueError, RuntimeError) as err:
+        _fail(f"Unexpected answer from the site: {err}")
+
+
+def _is_pending(row: UserCard, pending: set[str]) -> bool:
+    """The site may list catalog card ids or user-card ids; the extension accepts both."""
+    return row.id in pending or row.card_id in pending
 
 
 @app.command()
 def login(
-    from_file: Path | None = typer.Option(None, "--from-file", help="Read the Cookie header from this file."),
+    from_file: Path | None = typer.Option(None, "--from-file", exists=True, dir_okay=False, readable=True, help="Read the Cookie header from this file."),
 ) -> None:
     """Store the browser session from a pasted Cookie header (or a copied curl command)."""
     if from_file is not None:
@@ -81,9 +88,9 @@ def login(
 
 def _print_rows(rows: list[UserCard], pending: set[str], total: int | None) -> None:
     for row in rows:
-        flags = ("*" if row.starred else " ") + ("T" if row.id in pending else " ")
+        flags = ("*" if row.starred else " ") + ("T" if _is_pending(row, pending) else " ")
         typer.echo(f"{row.id:36}  {row.card.rarity:3}  {row.count:>3}  {flags}  {row.card.wikipedia_title}")
-    if total is not None:
+    if total is not None and len(rows) == total:
         typer.echo(f"{len(rows)} of {total} cards")
     else:
         typer.echo(f"{len(rows)} cards")
@@ -111,22 +118,7 @@ def collection(
     _print_rows(rows, set(data.pending_trade_card_ids), data.total)
 
 
-@app.command()
-def discard(
-    ids: list[str] = typer.Argument(..., help="User-card ids (the first column of `wm collection`)."),
-    yes: bool = typer.Option(False, "--yes", "-y", help="Do not ask for confirmation."),
-) -> None:
-    """Discard cards by id. Starred cards and cards in a pending trade are refused."""
-    client: Client | None = None
-
-    def load() -> CollectionPage:
-        nonlocal client
-        client = _client()
-        return client.all_collection()
-
-    data = _call(load)
-    assert client is not None
-    wanted = list(dict.fromkeys(ids))
+def _refusals(wanted: list[str], data: CollectionPage) -> list[str]:
     by_id = {row.id: row for row in data.collection}
     pending = set(data.pending_trade_card_ids)
     problems = []
@@ -136,25 +128,44 @@ def discard(
             problems.append(f"{card_id}: not in your collection")
         elif row.starred:
             problems.append(f"{card_id}: starred ({row.card.wikipedia_title})")
-        elif card_id in pending:
+        elif _is_pending(row, pending):
             problems.append(f"{card_id}: in a pending trade ({row.card.wikipedia_title})")
+    return problems
+
+
+def _refuse_if_any(problems: list[str]) -> None:
     if problems:
         for line in problems:
             typer.echo(line, err=True)
         raise typer.Exit(1)
+
+
+@app.command()
+def discard(
+    ids: list[str] = typer.Argument(..., help="User-card ids (the first column of `wm collection`)."),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Do not ask for confirmation."),
+) -> None:
+    """Discard cards by id. Starred cards and cards in a pending trade are refused."""
+    client = _client()
+    data = _call(client.all_collection)
+    wanted = list(dict.fromkeys(ids))
+    _refuse_if_any(_refusals(wanted, data))
+    by_id = {row.id: row for row in data.collection}
     for card_id in wanted:
         row = by_id[card_id]
         typer.echo(f"{row.card.rarity:3}  {row.card.wikipedia_title}")
     if not yes and not typer.confirm(f"Discard {len(wanted)} card(s)?"):
         _fail("Aborted.")
+    # The collection may have changed while the prompt was open: check again.
+    data = _call(client.all_collection)
+    _refuse_if_any(_refusals(wanted, data))
+    by_id = {row.id: row for row in data.collection}
     for card_id in wanted:
         title = by_id[card_id].card.wikipedia_title
-
-        def attempt() -> None:
-            try:
-                client.discard(card_id)
-            except ApiRefused as err:
-                _fail(f"failed {title}: {_api_message(err)}")
-
-        _call(attempt)
+        try:
+            client.discard(card_id)
+        except ApiRefused as err:
+            _fail(f"failed {title}: {_api_message(err)}")
+        except httpx.HTTPError as err:
+            _fail(f"failed {title}: Network error: {err}")
         typer.echo(f"ok {title}")

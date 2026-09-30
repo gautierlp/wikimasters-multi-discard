@@ -15,7 +15,6 @@ import time
 from pathlib import Path
 
 import httpx
-from pydantic import ValidationError
 
 from .models import Session
 
@@ -94,6 +93,7 @@ class SessionStore:
     def save(self, session: Session) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         fd = os.open(self.path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        os.fchmod(fd, 0o600)
         with os.fdopen(fd, "w") as f:
             f.write(session.model_dump_json(by_alias=True))
 

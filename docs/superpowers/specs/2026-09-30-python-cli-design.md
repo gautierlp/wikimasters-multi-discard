@@ -152,16 +152,19 @@ header built from the current session.
 
 Typer app `wm`:
 
-- `wm login`: prompts for the cookie header (hidden input), parses it, saves
-  the session, prints `Logged in as <username>`. `--from-file PATH` reads the
-  header from a file instead.
+- `wm login`: reads the cookie header from stdin (it must not be a terminal,
+  for example `pbpaste | wm login`), parses it, saves the session, prints
+  `Logged in as <username>`. `--from-file PATH` reads the header from a file
+  instead.
 - `wm collection [--page N] [--rarity R] [--json]`: table with id, title,
   rarity, count, starred (`*`), pending trade (`T`). `--json` prints the raw
   rows. Default sort is the API's (rarity).
 - `wm discard ID [ID...] [--yes]`: loads the collection first, refuses ids
   that are starred, in a pending trade, or not found (prints why, exit 1,
-  nothing discarded). Then shows the titles and asks for confirmation unless
-  `--yes`. Discards one at a time, prints `ok <title>` or the error, and stops
+  nothing discarded). A row is pending when its id or its `card_id` is in
+  `pendingTradeCardIds`, as in the extension. Then shows the titles and asks
+  for confirmation unless `--yes`, fetches the collection again and re-checks
+  protection before the first POST. Discards one at a time, prints `ok <title>` or the error, and stops
   at the first failure. Exit code 1 if any failed.
 
 Errors to the user, always in English: missing session -> "Not logged in. Run

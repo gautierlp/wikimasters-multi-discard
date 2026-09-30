@@ -84,6 +84,7 @@ def test_collection_page_and_rarity_filter(monkeypatch, page_json):
     assert result.exit_code == 0, result.output
     assert dict(calls[0].url.params) == {"sort": "rarity", "page": "4", "stats": "1"}
     assert "Beta" in result.output and "Alpha" not in result.output
+    assert result.output.splitlines()[-1] == "1 cards"
 
 
 def test_collection_json(monkeypatch, page_json):
@@ -174,3 +175,66 @@ def test_discard_stops_at_first_failure(monkeypatch, page_json):
     assert result.exit_code == 1
     assert "failed Alpha: HTTP 409: Vous ne possédez plus cette carte" in result.output
     assert posted_ids(calls) == ["uc-1"]
+
+
+def test_pending_matches_catalog_card_id(monkeypatch, page_json):
+    page_json["pendingTradeCardIds"] = ["card-3"]
+    calls = fake_client(monkeypatch, collection_then_discard(page_json))
+    listing = runner.invoke(app, ["collection"])
+    assert any(line.startswith("uc-3") and "T" in line for line in listing.output.splitlines())
+    result = runner.invoke(app, ["discard", "uc-3", "-y"])
+    assert result.exit_code == 1
+    assert "uc-3: in a pending trade (Gamma)" in result.output
+    assert posted_ids(calls) == []
+
+
+def test_collection_html_answer_is_clean(monkeypatch):
+    fake_client(monkeypatch, lambda r: httpx.Response(200, text="<html>maintenance</html>"))
+    result = runner.invoke(app, ["collection"])
+    assert result.exit_code == 1
+    assert "Unexpected answer from the site" in result.output
+
+
+def test_login_missing_file():
+    result = runner.invoke(app, ["login", "--from-file", "/nonexistent/cookie.txt"])
+    assert result.exit_code == 2
+    assert "does not exist" in result.output or "/nonexistent/cookie.txt" in result.output
+
+
+def test_discard_5xx_names_the_card(monkeypatch, page_json):
+    def handler(request):
+        if request.method == "POST":
+            return httpx.Response(502, text="bad gateway")
+        return httpx.Response(200, json=page_json)
+
+    fake_client(monkeypatch, handler)
+    result = runner.invoke(app, ["discard", "uc-1", "-y"])
+    assert result.exit_code == 1
+    assert "failed Alpha:" in result.output
+
+
+def test_discard_rechecks_after_confirmation(monkeypatch, page_json):
+    import copy
+
+    changed = copy.deepcopy(page_json)
+    changed["collection"][0]["starred"] = True
+    gets = []
+
+    def handler(request):
+        if request.method == "POST":
+            return httpx.Response(200, json={"ok": True})
+        gets.append(request)
+        return httpx.Response(200, json=page_json if len(gets) == 1 else changed)
+
+    calls = fake_client(monkeypatch, handler)
+    result = runner.invoke(app, ["discard", "uc-1", "-y"])
+    assert result.exit_code == 1
+    assert "uc-1: starred (Alpha)" in result.output
+    assert posted_ids(calls) == []
+
+
+def test_discard_fetches_collection_twice(monkeypatch, page_json):
+    calls = fake_client(monkeypatch, collection_then_discard(page_json))
+    result = runner.invoke(app, ["discard", "uc-1", "-y"])
+    assert result.exit_code == 0, result.output
+    assert len([c for c in calls if c.method == "GET"]) == 2
