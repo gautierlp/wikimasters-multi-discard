@@ -1,4 +1,4 @@
-# WikiMasters multi-discard
+# WikiMasters CLI
 
 This repo will be published as open source.
 
@@ -8,13 +8,14 @@ This repo will be published as open source.
 - Test fixtures use invented data (`uc-1`, `https://img.test/1.png`), never
   data captured from a live account.
 
-Commands: `npm test` (vitest), `npm run build` (esbuild to `extension/dist/`),
-`cd cli && uv run pytest -q` (Python CLI tests).
+Commands: `uv sync`, `uv run pytest -q` (tests), `uv run wm --help`.
 
 ## Publishing
 
-- Public repo: https://github.com/gautierlp/wikimasters-multi-discard
-  (first published 2026-09-28 with a fresh, single-commit history).
+- Public repo: https://github.com/gautierlp/wikimasters-cli
+  (first published 2026-09-28 as `wikimasters-multi-discard`, a Chrome
+  extension, with a fresh, single-commit history; renamed 2026-09-30 when the
+  extension was dropped for the CLI).
 - The local branch `private-history` holds the pre-publication history. It
   contains partial account ids and the owner's personal email. Never push it:
   no `git push --all`, no `git push origin private-history`.

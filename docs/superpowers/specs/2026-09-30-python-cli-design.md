@@ -5,9 +5,9 @@ Status: approved design, 2026-09-30.
 ## Goal
 
 A terminal tool, `wm`, that lists the player's WikiMasters collection and
-discards cards, from the same API the website and the Chrome extension use.
-Collection only for now. It lives in `cli/` in this repo; a move to its own
-repo can come later.
+discards cards, from the same API the website uses. Collection only for now.
+It is the whole repo (it lived in `cli/` next to a Chrome extension until the
+extension was dropped on 2026-09-30).
 
 ## What the API looks like (captured 2026-09-30)
 
@@ -86,7 +86,7 @@ captcha token on `grant_type=password` (verified: `captcha_failed`).
 The project ref and the anon key are public: they are embedded in the site's
 JavaScript and sent to every visitor. The anon key only lets a client talk to
 Supabase Auth; it grants no data access by itself. They are constants in
-`cli/wikimasters/auth.py`.
+`wikimasters/auth.py`.
 
 Consequence for the user: after the first refresh by the CLI, Chrome still
 holds the old refresh token. When Chrome's own access token expires, Chrome
@@ -95,7 +95,7 @@ may ask for a new login, once. After that the two sessions live apart.
 ## Code layout
 
 ```
-cli/
+./
   pyproject.toml            # package "wikimasters", script "wm", managed with uv
   wikimasters/
     __init__.py
@@ -151,7 +151,7 @@ header built from the current session.
 - `discard(user_card_id: str) -> None`: raises `ApiRefused(status, message)`
   on 4xx with the server's `error` text, `httpx.HTTPStatusError` on 5xx. A 5xx
   or a transport error is first retried after 2 s, 5 s, then 10 s, the same
-  waits as the extension's queue. A 500 on a discard has so far always left
+  waits the former Chrome extension used. A 500 on a discard has so far always left
   the card in place (seen 2026-09-30), so a retry does not discard twice.
 
 ### main.py
@@ -168,7 +168,7 @@ Typer app `wm`:
 - `wm discard ID [ID...] [--yes]`: loads the collection first, refuses ids
   that are starred, in a pending trade, or not found (prints why, exit 1,
   nothing discarded). A row is pending when its id or its `card_id` is in
-  `pendingTradeCardIds`, as in the extension. Then shows the titles and asks
+  `pendingTradeCardIds`, as the former Chrome extension did. Then shows the titles and asks
   for confirmation unless `--yes`, fetches the collection again and re-checks
   protection before the first POST. Discards one at a time, prints `ok <title>` or the error, and stops
   at the first failure. Exit code 1 if any failed.
