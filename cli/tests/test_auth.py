@@ -14,8 +14,6 @@ from wikimasters.auth import (
 )
 from wikimasters.models import Session
 
-from .conftest import make_session_dict
-
 
 def encode_cookie_value(data: dict) -> str:
     raw = base64.urlsafe_b64encode(json.dumps(data, separators=(",", ":")).encode()).decode()
@@ -41,6 +39,20 @@ def test_parse_whole_curl_command(session_dict):
 def test_parse_missing_cookie():
     with pytest.raises(LoginRequired):
         parse_cookie_header("foo=bar; other=1")
+
+
+def test_parse_garbled_cookie():
+    garbled = f"{COOKIE_NAME}=base64-!!!notbase64"
+    with pytest.raises(LoginRequired, match="Could not decode the cookie"):
+        parse_cookie_header(garbled)
+
+
+def test_parse_duplicate_chunks(session_dict):
+    value = encode_cookie_value(session_dict)
+    header = f"{COOKIE_NAME}={value}; {COOKIE_NAME}={value}"
+    session = parse_cookie_header(header)
+    assert session.access_token == "access-1"
+    assert session.user.username == "tester"
 
 
 def test_round_trip_long_session(session_dict):
@@ -71,6 +83,13 @@ def test_store_save_and_load(tmp_path, session_dict):
 def test_store_missing_file(tmp_path):
     with pytest.raises(LoginRequired, match="Not logged in"):
         SessionStore(tmp_path / "nope.json").load()
+
+
+def test_store_corrupt_file(tmp_path):
+    store = SessionStore(tmp_path / "session.json")
+    store.path.write_text('{"nope": 1}')
+    with pytest.raises(LoginRequired, match="The session file is unreadable"):
+        store.load()
 
 
 def test_store_default_path_uses_env(monkeypatch, tmp_path):

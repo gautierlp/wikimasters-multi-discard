@@ -8,6 +8,7 @@ Joined, the value is "base64-" followed by base64url JSON.
 from __future__ import annotations
 
 import base64
+import binascii
 import os
 import re
 from pathlib import Path
@@ -34,13 +35,21 @@ def parse_cookie_header(text: str) -> Session:
     found = _CHUNK_RE.findall(text)
     if not found:
         raise LoginRequired(f"No {COOKIE_NAME} cookie found in the pasted text.")
-    chunks = sorted(found, key=lambda m: int(m[0] or 0))
-    value = "".join(v for _, v in chunks)
+    chunk_dict = {}
+    for index, value in found:
+        idx = int(index or 0)
+        if idx not in chunk_dict:
+            chunk_dict[idx] = value
+    chunks = [chunk_dict[i] for i in sorted(chunk_dict.keys())]
+    value = "".join(chunks)
     if not value.startswith(PREFIX):
         raise LoginRequired("The cookie value does not start with 'base64-'.")
     raw = value[len(PREFIX) :]
-    data = base64.urlsafe_b64decode(raw + "=" * (-len(raw) % 4))
-    return Session.model_validate_json(data)
+    try:
+        data = base64.urlsafe_b64decode(raw + "=" * (-len(raw) % 4))
+        return Session.model_validate_json(data)
+    except (ValueError, binascii.Error) as e:
+        raise LoginRequired(f"Could not decode the cookie: {e}")
 
 
 def build_cookie_header(session: Session) -> str:
@@ -67,9 +76,13 @@ class SessionStore:
     def load(self) -> Session:
         if not self.path.exists():
             raise LoginRequired("Not logged in. Run `wm login`.")
-        return Session.model_validate_json(self.path.read_text())
+        try:
+            return Session.model_validate_json(self.path.read_text())
+        except ValueError as e:
+            raise LoginRequired("The session file is unreadable. Run `wm login` again.")
 
     def save(self, session: Session) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(session.model_dump_json(by_alias=True))
-        self.path.chmod(0o600)
+        fd = os.open(self.path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as f:
+            f.write(session.model_dump_json(by_alias=True))
