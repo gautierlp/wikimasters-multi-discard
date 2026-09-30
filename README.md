@@ -213,6 +213,42 @@ session cookie. It sends nothing anywhere else and stores nothing.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
+<!-- CLI -->
+## Python CLI
+
+The same two endpoints, from the terminal. It lives in `cli/` and needs Python
+3.12+ and [uv](https://docs.astral.sh/uv/).
+
+```sh
+cd cli && uv sync
+```
+
+**Log in once.** The site knows you by a session cookie. Copy it from Chrome:
+open your collection page, press Cmd+Option+I, open the Network tab, right-click
+the `my-collection` request, choose "Copy as cURL", then:
+
+```sh
+pbpaste | uv run wm login
+```
+
+The CLI keeps the session in `~/.config/wikimasters/session.json` (mode 600)
+and refreshes it on its own. After the first refresh, Chrome may ask you to log
+in again, once. After that the two sessions live apart.
+
+Commands:
+
+```sh
+uv run wm collection                 # every card: id, rarity, count, flags, title
+uv run wm collection --rarity SR     # one rarity
+uv run wm collection --json          # raw rows
+uv run wm discard <id> [<id>...]     # asks first; -y skips the question
+```
+
+Flags in the list: `*` starred, `T` in a pending trade. `discard` refuses both,
+and any id not in your collection, before it sends anything.
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
 <!-- ROADMAP -->
 ## Roadmap
 
