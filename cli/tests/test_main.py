@@ -120,3 +120,57 @@ def test_collection_network_error(monkeypatch):
     result = runner.invoke(app, ["collection"])
     assert result.exit_code == 1
     assert "Network error" in result.output
+
+
+def collection_then_discard(page_json, discard_status: int = 200):
+    """A fake site: GET pages return the fixture, POST discards answer discard_status."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST":
+            if discard_status == 200:
+                return httpx.Response(200, json={"ok": True})
+            return httpx.Response(discard_status, json={"error": "Vous ne possédez plus cette carte"})
+        return httpx.Response(200, json=page_json)
+
+    return handler
+
+
+def posted_ids(calls: list[httpx.Request]) -> list[str]:
+    return [c.url.path.split("/")[3] for c in calls if c.method == "POST"]
+
+
+def test_discard_refuses_starred_pending_and_unknown(monkeypatch, page_json):
+    calls = fake_client(monkeypatch, collection_then_discard(page_json))
+    result = runner.invoke(app, ["discard", "uc-2", "uc-3", "uc-9", "--yes"])
+    assert result.exit_code == 1
+    assert "uc-2: starred (Beta)" in result.output
+    assert "uc-3: in a pending trade (Gamma)" in result.output
+    assert "uc-9: not in your collection" in result.output
+    assert posted_ids(calls) == []
+
+
+def test_discard_asks_and_aborts_on_no(monkeypatch, page_json):
+    calls = fake_client(monkeypatch, collection_then_discard(page_json))
+    result = runner.invoke(app, ["discard", "uc-1"], input="n\n")
+    assert result.exit_code == 1
+    assert "Discard 1 card(s)?" in result.output
+    assert "Aborted." in result.output
+    assert posted_ids(calls) == []
+
+
+def test_discard_with_yes_posts_each_id_once(monkeypatch, page_json):
+    calls = fake_client(monkeypatch, collection_then_discard(page_json))
+    result = runner.invoke(app, ["discard", "uc-1", "uc-1", "-y"])
+    assert result.exit_code == 0, result.output
+    assert "ok Alpha" in result.output
+    assert posted_ids(calls) == ["uc-1"]
+
+
+def test_discard_stops_at_first_failure(monkeypatch, page_json):
+    page_json["collection"][1]["starred"] = False
+    page_json["pendingTradeCardIds"] = []
+    calls = fake_client(monkeypatch, collection_then_discard(page_json, discard_status=409))
+    result = runner.invoke(app, ["discard", "uc-1", "uc-2", "uc-3", "-y"])
+    assert result.exit_code == 1
+    assert "failed Alpha: HTTP 409: Vous ne possédez plus cette carte" in result.output
+    assert posted_ids(calls) == ["uc-1"]
