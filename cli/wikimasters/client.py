@@ -19,6 +19,9 @@ PAGE_SIZE = 50
 MAX_PAGES = 200
 RETRIES = 3  # total attempts for a page load
 RETRY_WAIT_S = 1.0  # wait after attempt n is RETRY_WAIT_S * n
+# Same waits as the extension's queue.js. A 500 on a discard has so far always
+# left the card in place, and a later try discards it without a problem.
+DISCARD_RETRY_WAITS_S = [2.0, 5.0, 10.0]
 
 
 class ApiRefused(Exception):
@@ -54,17 +57,8 @@ class Client:
 
     def collection_page(self, page: int, stats: bool = False) -> CollectionPage:
         params = {"sort": "rarity", "page": page, "stats": int(stats)}
-        for attempt in range(1, RETRIES + 1):
-            try:
-                response = self._http.get("/api/my-collection", params=params)
-            except httpx.TransportError:
-                if attempt == RETRIES:
-                    raise
-            else:
-                if response.status_code < 500 or attempt == RETRIES:
-                    _raise_for(response)
-                    break
-            self._sleep(RETRY_WAIT_S * attempt)
+        waits = [RETRY_WAIT_S * n for n in range(1, RETRIES)]
+        response = self._with_retries(lambda: self._http.get("/api/my-collection", params=params), waits)
         return CollectionPage.model_validate(response.json())
 
     def all_collection(self) -> CollectionPage:
@@ -89,8 +83,21 @@ class Client:
         )
 
     def discard(self, user_card_id: str) -> None:
-        response = self._http.post(f"/api/user-cards/{user_card_id}/discard")
-        _raise_for(response)
+        self._with_retries(lambda: self._http.post(f"/api/user-cards/{user_card_id}/discard"), DISCARD_RETRY_WAITS_S)
+
+    def _with_retries(self, send: Callable[[], httpx.Response], waits: list[float]) -> httpx.Response:
+        """Send, and send again after each wait on a 5xx or a transport error. A 4xx is final."""
+        for wait in [*waits, None]:
+            try:
+                response = send()
+            except httpx.TransportError:
+                if wait is None:
+                    raise
+            else:
+                if response.status_code < 500 or wait is None:
+                    _raise_for(response)
+                    return response
+            self._sleep(wait)
 
 
 def _raise_for(response: httpx.Response) -> None:

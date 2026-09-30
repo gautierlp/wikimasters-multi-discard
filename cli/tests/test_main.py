@@ -36,7 +36,7 @@ def fake_client(monkeypatch, handler) -> list[httpx.Request]:
         return handler(request)
 
     session = Session.model_validate(make_session_dict())
-    monkeypatch.setattr(main, "_client", lambda: Client(session, transport=httpx.MockTransport(wrapped)))
+    monkeypatch.setattr(main, "_client", lambda: Client(session, transport=httpx.MockTransport(wrapped), sleep=lambda s: None))
     return calls
 
 

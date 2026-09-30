@@ -144,12 +144,15 @@ header built from the current session.
 - `collection_page(page: int, stats: bool = False) -> CollectionPage`. The site
   answers 500 at random (about one call in six, seen 2026-09-30), so a page load
   is tried up to 3 times on a 5xx or a transport error, with a wait of 1 s then
-  2 s. A 4xx is never retried, and `discard` never retries.
+  2 s. A 4xx is never retried.
 - `all_collection() -> CollectionPage`: page 0 with `stats=1`, then next pages
   with `stats=0` until a page has fewer than 50 rows; rows concatenated,
   `pendingTradeCardIds` unioned. Hard stop at 200 pages.
 - `discard(user_card_id: str) -> None`: raises `ApiRefused(status, message)`
-  on 4xx with the server's `error` text, `httpx.HTTPStatusError` on 5xx.
+  on 4xx with the server's `error` text, `httpx.HTTPStatusError` on 5xx. A 5xx
+  or a transport error is first retried after 2 s, 5 s, then 10 s, the same
+  waits as the extension's queue. A 500 on a discard has so far always left
+  the card in place (seen 2026-09-30), so a retry does not discard twice.
 
 ### main.py
 

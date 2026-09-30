@@ -3,7 +3,7 @@ import httpx
 import pytest
 
 from wikimasters.auth import COOKIE_NAME
-from wikimasters.client import PAGE_SIZE, RETRIES, RETRY_WAIT_S, ApiRefused, Client
+from wikimasters.client import DISCARD_RETRY_WAITS_S, PAGE_SIZE, RETRIES, RETRY_WAIT_S, ApiRefused, Client
 from wikimasters.models import Session
 
 from .conftest import make_session_dict
@@ -163,10 +163,28 @@ def test_collection_page_does_not_retry_4xx(session):
     assert sleeps == []
 
 
-def test_discard_is_not_retried_on_server_error(session):
+def test_discard_retries_server_errors_then_succeeds(session):
+    answers = iter([500, 502, 200])
     sleeps: list[float] = []
-    client, calls = client_with(lambda r: httpx.Response(502), session, sleep=sleeps.append)
+    client, calls = client_with(lambda r: httpx.Response(next(answers), json={"ok": True}), session, sleep=sleeps.append)
+    client.discard("uc-1")
+    assert len(calls) == 3
+    assert sleeps == [2.0, 5.0]
+
+
+def test_discard_gives_up_after_retries(session):
+    sleeps: list[float] = []
+    client, calls = client_with(lambda r: httpx.Response(500), session, sleep=sleeps.append)
     with pytest.raises(httpx.HTTPStatusError):
+        client.discard("uc-1")
+    assert len(calls) == len(DISCARD_RETRY_WAITS_S) + 1 == 4
+    assert sleeps == DISCARD_RETRY_WAITS_S == [2.0, 5.0, 10.0]
+
+
+def test_discard_does_not_retry_4xx(session):
+    sleeps: list[float] = []
+    client, calls = client_with(lambda r: httpx.Response(409, json={"error": "non"}), session, sleep=sleeps.append)
+    with pytest.raises(ApiRefused):
         client.discard("uc-1")
     assert len(calls) == 1
     assert sleeps == []
